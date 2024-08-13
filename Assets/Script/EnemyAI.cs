@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections;
 using Unity.VisualScripting;
 using UnityEditor.Build;
 using UnityEngine;
@@ -13,17 +14,16 @@ public class EnemyAI : MonoBehaviour
     [SerializeField] Transform player;
 
     [Header("Chase Behaviour")]
-    [SerializeField] bool hasHitPlayer = false;
     [SerializeField] float chaseRange = 5f;
     float distanceToTarget = Mathf.Infinity;
-    [SerializeField] bool isTired = false;
+    [SerializeField] bool isProvoked = false;
 
     [SerializeField] float chaseTimer = 5f;
     [SerializeField] float chaseTimeRemaining;
 
     [Header("Audio And SFX")]
     AudioSource enemyAudioSource;
-    [SerializeField] bool isDetectPlayer = false;
+    [SerializeField] bool isDetectPlayerSFX = false;
 
     [SerializeField] AudioClip detectPlayerSFX;
     [SerializeField][Range(0, 1)] float detectPlayerVolume = 0.5f;
@@ -51,10 +51,20 @@ public class EnemyAI : MonoBehaviour
 
     void Update()
     {
-        CheckEnemyStatus();
+        distanceToTarget = Vector3.Distance(transform.position, player.position);
 
         ChaseBehaviour();
+        if (isProvoked && distanceToTarget < chaseRange)
+        {
+            ChasePlayer();
+        }
+        else if (isProvoked && distanceToTarget > chaseRange)
+        {
+            // ShootPlayer(); if in the future there is an archer zombie of some sort
+            return;
+        };
 
+        ResetChaseTime();
 
     }
 
@@ -62,7 +72,6 @@ public class EnemyAI : MonoBehaviour
     {
         if (collision.gameObject.CompareTag("Player"))
         {
-            hasHitPlayer = true;
             Debug.Log("The Enemy has hit player");
 
             chaseTimeRemaining = chaseTimer;
@@ -71,22 +80,16 @@ public class EnemyAI : MonoBehaviour
 
     private void ChaseBehaviour()
     {
-        // tính khoảng cách tới player
-        distanceToTarget = Vector3.Distance(transform.position, player.position);
-
-        if (distanceToTarget <= chaseRange && !isTired)
+        if (distanceToTarget <= chaseRange && !isProvoked)
         {
-            ChasePlayer();
+            isProvoked = true;
             Debug.Log("PLAYER SPOTTED AND CHASING");
 
         }
     }
 
-
-
     void ChasePlayer()
     {
-        isTired = false;
         // giảm thời gian đuổi
         if (chaseTimeRemaining <= chaseTimer && chaseTimeRemaining > Mathf.Epsilon)
         {
@@ -98,48 +101,46 @@ public class EnemyAI : MonoBehaviour
         navMeshAgent.SetDestination(player.position);
         navMeshAgent.speed = navMeshAgent.acceleration;
 
-        // nếu đang trong trạng thái calm
-        if (!isDetectPlayer && !enemyAudioSource.isPlaying)
+        // nếu đang trong trạng thái calm chuyển sang isProvoked thì sẽ chạy âm thanh
+        if (!isDetectPlayerSFX && !enemyAudioSource.isPlaying)
         {
             // phát âm thanh báo hiệu bắt đầu đuổi người chơi 
             //enemyAudioSource.PlayOneShot(detectPlayerSFX, detectPlayerVolume);
 
             Debug.Log("Agressive Audio Played");
-            isDetectPlayer = true;
+            isDetectPlayerSFX = true;
 
         }
 
-        // nếu đã bắt được người chơi khi đang đuổi thì reset chaseTimeRemaining để tiếp tục đuổi 
-        if (hasHitPlayer)
-        {
-            chaseTimeRemaining = chaseTimer;
-            hasHitPlayer = false;
-        }
-
-        // nếu quá chaseTimer mà vẫn chưa bắt được người chơi
-        if (chaseTimeRemaining <= Mathf.Epsilon)
+        // nếu hết chaseTimer và người chơi đã ra ngoài tầm chaseRange -> dừng đuổi
+        if (chaseTimeRemaining <= Mathf.Epsilon && distanceToTarget > chaseRange)
         {
             StopChasing();
 
+        }
+        // nếu hết chaseTimer và người chơi vẫn trong tầm chaseRange -> tiếp tục đuổi thêm chaseTimer
+        else if (chaseTimeRemaining <= Mathf.Epsilon && distanceToTarget < chaseRange)
+        {
+            chaseTimeRemaining = chaseTimer;
         }
 
     }
 
     void StopChasing()
     {
-        isTired = true;
+        isProvoked = false;
 
         // nếu đuổi hết chaseTimer mà vẫn chưa bắt đc ng chơi
-        if (isDetectPlayer && !enemyAudioSource.isPlaying)
+        if (isDetectPlayerSFX && !enemyAudioSource.isPlaying)
         {
             // phát âm thanh thông báo đã bỏ cuộc
             //enemyAudioSource.PlayOneShot(giveupPlayerSFX, giveupVolume);
             Debug.Log("Give up Audio Played");
 
-            isDetectPlayer = false;
+            isDetectPlayerSFX = false;
         }
 
-        // giảm tốc độ của enemy 
+        // giảm tốc độ của enemy về trạng thái bình thường
         navMeshAgent.speed = baseSpeed;
 
         ReturnToPost();
@@ -153,11 +154,11 @@ public class EnemyAI : MonoBehaviour
 
     }
 
-    private void CheckEnemyStatus()
+    void ResetChaseTime()
     {
-        if (Vector3.Distance(transform.position, guardPosition.position) < 0.1f && isTired)
+        // nếu đã về vị trí đứng gác và !isProvoked
+        if (distanceToTarget < 1f && !isProvoked)
         {
-            isTired = false;
             chaseTimeRemaining = chaseTimer;
         }
     }
