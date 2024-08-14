@@ -15,6 +15,7 @@ public class EnemyAI : MonoBehaviour
 
     [Header("Chase Behaviour")]
     [SerializeField] float chaseRange = 5f;
+    [SerializeField] float stoppingDistance = 1.5f;
     float distanceToTarget = Mathf.Infinity;
     [SerializeField] bool isProvoked = false;
 
@@ -25,9 +26,9 @@ public class EnemyAI : MonoBehaviour
     AudioSource enemyAudioSource;
     [SerializeField] bool isDetectPlayerSFX = false;
 
-    [SerializeField] AudioClip detectPlayerSFX;
+    [SerializeField] AudioClip provokedSFX;
     [SerializeField][Range(0, 1)] float detectPlayerVolume = 0.5f;
-    [SerializeField] AudioClip giveupPlayerSFX;
+    [SerializeField] AudioClip giveUpChasingSFX;
     [SerializeField][Range(0, 1)] float giveupVolume = 0.5f;
 
 
@@ -54,28 +55,23 @@ public class EnemyAI : MonoBehaviour
         distanceToTarget = Vector3.Distance(transform.position, player.position);
 
         ChaseBehaviour();
+
         if (isProvoked && distanceToTarget < chaseRange)
         {
             ChasePlayer();
+
+            // giảm thời gian đuổi
+            if (chaseTimeRemaining <= chaseTimer && chaseTimeRemaining > Mathf.Epsilon)
+            {
+                chaseTimeRemaining -= Time.deltaTime;
+            }
+            Mathf.Clamp(chaseTimeRemaining, 0, chaseTimer);
         }
         else if (isProvoked && distanceToTarget > chaseRange)
         {
             // ShootPlayer(); if in the future there is an archer zombie of some sort
-            return;
+            
         };
-
-        ResetChaseTime();
-
-    }
-
-    void OnCollisionEnter(Collision collision)
-    {
-        if (collision.gameObject.CompareTag("Player"))
-        {
-            Debug.Log("The Enemy has hit player");
-
-            chaseTimeRemaining = chaseTimer;
-        }
     }
 
     private void ChaseBehaviour()
@@ -86,44 +82,57 @@ public class EnemyAI : MonoBehaviour
             Debug.Log("PLAYER SPOTTED AND CHASING");
 
         }
+        
+        // nếu đã về vị trí đứng gác và !isProvoked -> reset chaseTimeRemaining để đuổi lượt mới
+        if (distanceToTarget < 1f && !isProvoked)
+        {
+            chaseTimeRemaining = chaseTimer;
+        }
+
     }
 
     void ChasePlayer()
     {
-        // giảm thời gian đuổi
-        if (chaseTimeRemaining <= chaseTimer && chaseTimeRemaining > Mathf.Epsilon)
-        {
-            chaseTimeRemaining -= Time.deltaTime;
-        }
-        Mathf.Clamp(chaseTimeRemaining, 0, chaseTimer);
-
-        // tăng tốc lao tới người chơi
+        // tăng tốc lao tới player
         navMeshAgent.SetDestination(player.position);
         navMeshAgent.speed = navMeshAgent.acceleration;
 
-        // nếu đang trong trạng thái calm chuyển sang isProvoked thì sẽ chạy âm thanh
+        // nếu đang trong trạng thái calm chuyển sang isProvoked thì sẽ chạy âm thanh provokedSFX
         if (!isDetectPlayerSFX && !enemyAudioSource.isPlaying)
         {
-            // phát âm thanh báo hiệu bắt đầu đuổi người chơi 
-            //enemyAudioSource.PlayOneShot(detectPlayerSFX, detectPlayerVolume);
+            // phát âm thanh báo hiệu bắt đầu đuổi player 
+            //enemyAudioSource.PlayOneShot(provokedSFX, detectPlayerVolume);
 
             Debug.Log("Agressive Audio Played");
             isDetectPlayerSFX = true;
 
         }
 
-        // nếu hết chaseTimer và người chơi đã ra ngoài tầm chaseRange -> dừng đuổi
+        // nếu hết chaseTimer và player đã ra ngoài tầm chaseRange -> dừng đuổi
         if (chaseTimeRemaining <= Mathf.Epsilon && distanceToTarget > chaseRange)
         {
             StopChasing();
 
         }
-        // nếu hết chaseTimer và người chơi vẫn trong tầm chaseRange -> tiếp tục đuổi thêm chaseTimer
+        // nếu hết chaseTimer và player vẫn trong tầm chaseRange -> tiếp tục đuổi = reset chaseTimer
         else if (chaseTimeRemaining <= Mathf.Epsilon && distanceToTarget < chaseRange)
         {
             chaseTimeRemaining = chaseTimer;
         }
 
+        if (distanceToTarget < 2f)
+        {
+            AttackPlayer();
+        }
+    }
+
+    private void AttackPlayer()
+    {
+        // attack player
+        Debug.Log(name + " Hit " + player.name);
+
+        // continue pursuit 
+        chaseTimeRemaining = chaseTimer;
     }
 
     void StopChasing()
@@ -134,7 +143,7 @@ public class EnemyAI : MonoBehaviour
         if (isDetectPlayerSFX && !enemyAudioSource.isPlaying)
         {
             // phát âm thanh thông báo đã bỏ cuộc
-            //enemyAudioSource.PlayOneShot(giveupPlayerSFX, giveupVolume);
+            //enemyAudioSource.PlayOneShot(giveUpChasingSFX, giveupVolume);
             Debug.Log("Give up Audio Played");
 
             isDetectPlayerSFX = false;
@@ -152,15 +161,6 @@ public class EnemyAI : MonoBehaviour
         // quay trở lại guardPost
         navMeshAgent.SetDestination(guardPosition.position);
 
-    }
-
-    void ResetChaseTime()
-    {
-        // nếu đã về vị trí đứng gác và !isProvoked
-        if (distanceToTarget < 1f && !isProvoked)
-        {
-            chaseTimeRemaining = chaseTimer;
-        }
     }
 
     void OnDrawGizmosSelected()
