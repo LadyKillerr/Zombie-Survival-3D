@@ -15,20 +15,22 @@ public class EnemyAI : MonoBehaviour
 
     [Header("Chase Behaviour")]
     [SerializeField] float chaseRange = 5f;
-    [SerializeField] float stoppingDistance = 1.5f;
+    [SerializeField] float attackingDistance = 1.5f;
     float distanceToTarget = Mathf.Infinity;
     [SerializeField] bool isProvoked = false;
+    [SerializeField] bool isHitting = false;
+    [SerializeField] float hitDelay = 1.5f;
 
     [SerializeField] float chaseTimer = 5f;
     [SerializeField] float chaseTimeRemaining;
 
     [Header("Audio And SFX")]
     AudioSource enemyAudioSource;
-    [SerializeField] bool isDetectPlayerSFX = false;
+
 
     [SerializeField] AudioClip provokedSFX;
-    [SerializeField][Range(0, 1)] float detectPlayerVolume = 0.5f;
-    [SerializeField] AudioClip giveUpChasingSFX;
+    [SerializeField][Range(0, 1)] float provokedSFXVol = 0.5f;
+    [SerializeField] AudioClip giveUpEngagingSFX;
     [SerializeField][Range(0, 1)] float giveupVolume = 0.5f;
 
 
@@ -54,63 +56,77 @@ public class EnemyAI : MonoBehaviour
     {
         distanceToTarget = Vector3.Distance(transform.position, player.position);
 
-        ChaseBehaviour();
+        ToggleIsProvoked();
+        ChaseTimeCountdown();
 
-        if (isProvoked && distanceToTarget < chaseRange)
-        {
-            ChasePlayer();
-
-            // giảm thời gian đuổi
-            if (chaseTimeRemaining <= chaseTimer && chaseTimeRemaining > Mathf.Epsilon)
-            {
-                chaseTimeRemaining -= Time.deltaTime;
-            }
-            Mathf.Clamp(chaseTimeRemaining, 0, chaseTimer);
-        }
-        else if (isProvoked && distanceToTarget > chaseRange)
-        {
-            // ShootPlayer(); if in the future there is an archer zombie of some sort
-            
-        };
     }
 
-    private void ChaseBehaviour()
+    void ChaseTimeCountdown()
+    {
+        // giảm thời gian đuổi
+        if (isProvoked && chaseTimeRemaining > Mathf.Epsilon)
+        {
+            chaseTimeRemaining -= Time.deltaTime;
+            Mathf.Clamp(chaseTimeRemaining, 0, chaseTimer);
+        }
+        // nếu đã về vị trí đứng gác và !isProvoked -> reset chaseTimeRemaining để đuổi lượt mới
+        else if (Vector3.Distance(transform.position, guardPosition.position) < 1f && !isProvoked)
+        {
+            chaseTimeRemaining = chaseTimer;
+        }
+    }
+
+    void ToggleIsProvoked()
     {
         if (distanceToTarget <= chaseRange && !isProvoked)
         {
             isProvoked = true;
             Debug.Log("PLAYER SPOTTED AND CHASING");
 
+            // nếu đang trong trạng thái calm chuyển sang isProvoked thì sẽ chạy âm thanh provokedSFX
+            if (enemyAudioSource != null && !enemyAudioSource.isPlaying)
+            {
+                // phát âm thanh báo hiệu bắt đầu đuổi player 
+                //enemyAudioSource.PlayOneShot(provokedSFX, provokedSFXVol);
+
+                Debug.Log("Agressive Audio Played");
+
+
+            }
         }
-        
-        // nếu đã về vị trí đứng gác và !isProvoked -> reset chaseTimeRemaining để đuổi lượt mới
-        if (distanceToTarget < 1f && !isProvoked)
+        else if (isProvoked)
         {
-            chaseTimeRemaining = chaseTimer;
+            EngagePlayer();
+        }
+
+
+    }
+
+    void EngagePlayer()
+    {
+        if (distanceToTarget > attackingDistance)
+        {
+            ChasePlayer();
+        }
+        else if (distanceToTarget <= attackingDistance)
+        {
+            AttackPlayer();
         }
 
     }
 
-    void ChasePlayer()
+    private void ChasePlayer()
     {
         // tăng tốc lao tới player
         navMeshAgent.SetDestination(player.position);
         navMeshAgent.speed = navMeshAgent.acceleration;
 
-        // nếu đang trong trạng thái calm chuyển sang isProvoked thì sẽ chạy âm thanh provokedSFX
-        if (!isDetectPlayerSFX && !enemyAudioSource.isPlaying)
-        {
-            // phát âm thanh báo hiệu bắt đầu đuổi player 
-            //enemyAudioSource.PlayOneShot(provokedSFX, detectPlayerVolume);
 
-            Debug.Log("Agressive Audio Played");
-            isDetectPlayerSFX = true;
-
-        }
 
         // nếu hết chaseTimer và player đã ra ngoài tầm chaseRange -> dừng đuổi
         if (chaseTimeRemaining <= Mathf.Epsilon && distanceToTarget > chaseRange)
         {
+            Debug.Log("Stopped Chasing the player");
             StopChasing();
 
         }
@@ -119,20 +135,28 @@ public class EnemyAI : MonoBehaviour
         {
             chaseTimeRemaining = chaseTimer;
         }
-
-        if (distanceToTarget < 2f)
-        {
-            AttackPlayer();
-        }
     }
 
     private void AttackPlayer()
     {
-        // attack player
-        Debug.Log(name + " Hit " + player.name);
+        if (!isHitting)
+        {
+            // attack player
+            Debug.Log(name + " Hit " + player.name);
 
-        // continue pursuit 
-        chaseTimeRemaining = chaseTimer;
+            // continue pursuit 
+            chaseTimeRemaining = chaseTimer;
+
+            isHitting = true;
+            StartCoroutine(ResetIsHitting(hitDelay));
+        }
+    }
+
+    IEnumerator ResetIsHitting(float hitDelay)
+    {
+        yield return new WaitForSeconds(hitDelay);
+
+        isHitting = false;
     }
 
     void StopChasing()
@@ -140,13 +164,11 @@ public class EnemyAI : MonoBehaviour
         isProvoked = false;
 
         // nếu đuổi hết chaseTimer mà vẫn chưa bắt đc ng chơi
-        if (isDetectPlayerSFX && !enemyAudioSource.isPlaying)
+        if (enemyAudioSource != null && !enemyAudioSource.isPlaying)
         {
             // phát âm thanh thông báo đã bỏ cuộc
-            //enemyAudioSource.PlayOneShot(giveUpChasingSFX, giveupVolume);
+            //enemyAudioSource.PlayOneShot(giveUpEngagingSFX, giveupVolume);
             Debug.Log("Give up Audio Played");
-
-            isDetectPlayerSFX = false;
         }
 
         // giảm tốc độ của enemy về trạng thái bình thường
@@ -161,6 +183,7 @@ public class EnemyAI : MonoBehaviour
         // quay trở lại guardPost
         navMeshAgent.SetDestination(guardPosition.position);
 
+        Debug.Log("Let enemy return to guard post");
     }
 
     void OnDrawGizmosSelected()
